@@ -1,0 +1,19 @@
+{
+  "enabled": {
+    "description": "启用火警（故障报修）",
+    "type": "bool",
+    "default": false
+  },
+  "enabled_self_ids": {
+    "description": "启用的 bot ID",
+    "type": "text",
+    "default": "",
+    "hint": "只填写明确启用的 bot ID，多个用逗号分隔；留空时任何 bot 都不启用。"
+  },
+  "generic_marks": {
+    "description": "同时识别框架通用失败词（error: / Traceback）",
+    "type": "bool",
+    "default": false,
+    "hint": "先紧后松：默认只认我们自己的工具失败话术，宁可漏报不可误报；观察一段时间再打开。"
+  }
+}

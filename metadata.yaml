@@ -1,0 +1,14 @@
+name: SparxieAlarm
+display_name: 火警
+desc: 设备出毛病时，让她用自己的语气去找运营报修（登记 / 递话头 / 销账）
+short_desc: 故障报修 —— 她会自己喊运营
+author: Illusory-moon
+version: 0.1.0
+repo: https://github.com/Illusory-moon/SparxieAlarm
+astrbot_version: ">=4.17.0"
+support_platforms:
+  - aiocqhttp
+tags:
+  - 报修
+  - 角色扮演
+  - 运维
