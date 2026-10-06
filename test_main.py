@@ -166,7 +166,7 @@ class AlarmTest(unittest.TestCase):
              "function": {"name": "at_user", "arguments": "{\"who\": \"某人\"}"}}]},
             {"role": "tool", "tool_call_id": "a1", "content": "点名排上了：…"}]
         asyncio.run(p.scan_run(Event("fire"), self.run_ctx(at)))
-        self.assertIsNotNone(self.module.load_state(p.path)["pending"][0]["reported_at"])
+        self.assertIsNone(self.module.load_state(p.path)["pending"][0]["reported_at"])
         req3 = types.SimpleNamespace(system_prompt="", prompt="hi", extra_user_content_parts=[])
         asyncio.run(p.maybe_hint(Event("fire"), req3))
         self.assertEqual(len(req3.extra_user_content_parts), 0)
@@ -181,6 +181,24 @@ class AlarmTest(unittest.TestCase):
             {"role": "tool", "tool_call_id": "a1", "content": "点名排上了：…"}]
         asyncio.run(p.scan_run(Event("fire"), self.run_ctx(at)))
         self.assertIsNone(self.module.load_state(p.path)["pending"][0]["reported_at"])
+
+    def test_state_is_scoped_per_bot(self):
+        p = self.module.Main(None, {"enabled": True, "enabled_self_ids": "fire,water"})
+        asyncio.run(p.scan_run(Event("fire"), self.run_ctx(tool_msg("没发出去", call_id="f"))))
+        asyncio.run(p.scan_run(Event("water"), self.run_ctx(tool_msg("没发出去", call_id="w"))))
+        data = self.module.load_state(p.path)["pending"]
+        self.assertEqual({item["bot"] for item in data}, {"fire", "water"})
+        req = types.SimpleNamespace(prompt="hi", extra_user_content_parts=[])
+        asyncio.run(p.maybe_hint(Event("fire"), req))
+        data = self.module.load_state(p.path)["pending"]
+        self.assertEqual({item["bot"]: item["hinted"] for item in data},
+                         {"fire": 1, "water": 0})
+
+    def test_corrupt_state_is_not_overwritten(self):
+        p = self.plugin()
+        Path(p.path).write_text("{bad", encoding="utf-8")
+        asyncio.run(p.scan_run(Event("fire"), self.run_ctx(tool_msg("没发出去"))))
+        self.assertEqual(Path(p.path).read_text(encoding="utf-8"), "{bad")
 
 
 if __name__ == "__main__":

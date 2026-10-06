@@ -161,28 +161,25 @@ class Main(star.Star):
         return bool(bot) and bot in self.targets
 
     def _load(self):
-        try:
-            return load_state(self.path)
-        except Exception as exc:
-            logger.warning("[alarm] 状态文件读不动: %s", type(exc).__name__)
-            return {"version": VERSION, "pending": []}
+        return load_state(self.path)
 
     def _save(self, data=None):
-        try:
-            save_state(self.path, data if data is not None else self._data)
-        except Exception as exc:
-            logger.warning("[alarm] 状态写不动: %s", type(exc).__name__)
+        save_state(self.path, data)
 
-    def _register(self, tool, mark, snippet):
+    def _belongs(self, item, bot):
+        return item.get("bot") == bot or (not item.get("bot") and len(self.targets) == 1)
+
+    def _register(self, bot, tool, mark, snippet):
         data = self._load()
         key = bug_key(tool, mark)
         now = time.time()
         for item in data["pending"]:
-            if bug_key(item.get("tool"), item.get("mark")) == key:
+            if self._belongs(item, bot) and bug_key(item.get("tool"), item.get("mark")) == key:
                 item["last_seen"] = now
                 self._save(data)
                 return False
         data["pending"].append({
+            "bot": bot,
             "tool": str(tool or "?"),
             "mark": str(mark or "?"),
             "snippet": str(snippet or "")[:_MAX_SNIPPET],
@@ -196,15 +193,18 @@ class Main(star.Star):
         logger.info("[alarm] 登记 tool=%s snippet=%s", tool, str(snippet or "")[:_MAX_SNIPPET])
         return True
 
-    def _hintable(self):
+    def _hintable(self, bot):
         data = self._load()
         now = time.time()
         for item in data["pending"]:
+            if not self._belongs(item, bot):
+                continue
             if item.get("reported_at"):
                 continue
             if int(item.get("hinted") or 0) >= HINT_LIMIT:
                 continue
-            if now - float(item.get("hinted_at") or 0) < HINT_COOLDOWN:
+            gap = NUDGE_AFTER if item.get("hinted") else HINT_COOLDOWN
+            if now - float(item.get("hinted_at") or 0) < gap:
                 continue
             return data, item
         return data, None
@@ -216,7 +216,7 @@ class Main(star.Star):
         if not self.scope(event):
             return
         try:
-            data, item = self._hintable()
+            data, item = self._hintable(str(event.get_self_id()).strip())
             if item is None:
                 return
             nudge = int(item.get("hinted") or 0) > 0
@@ -244,13 +244,10 @@ class Main(star.Star):
         except Exception:
             return
         calls = {}
-        pointed = ""
         for msg in messages:
             role = str(_get(msg, "role", "") or "")
-            for cid, name, args in _tool_calls_of(msg):
+            for cid, name, _ in _tool_calls_of(msg):
                 calls[cid] = name
-                if name == "at_user":
-                    pointed = str(args or "")[:80]
             if role != "tool":
                 continue
             body = _text_of(_get(msg, "content", ""))
@@ -258,21 +255,8 @@ class Main(star.Star):
             if not mark:
                 continue
             tool = calls.get(str(_get(msg, "tool_call_id", "") or ""), "?")
-            self._register(tool, mark, body)
-        if pointed:
-            logger.info("[alarm] 她点名了 args=%s", pointed[:60])
-            self._close_reported()
-
-    def _close_reported(self):
-        """只销「已递过话头」的账 —— 她 @ 别人的日常操作不会误销。"""
-        data = self._load()
-        now = time.time()
-        hit = 0
-        for item in data["pending"]:
-            if item.get("reported_at") or int(item.get("hinted") or 0) < 1:
-                continue
-            item["reported_at"] = now
-            hit += 1
-            logger.info("[alarm] 她报修了 → 销账 tool=%s", item.get("tool"))
-        if hit:
-            self._save(data)
+            try:
+                self._register(str(event.get_self_id()).strip(), tool, mark, body)
+            except Exception as exc:
+                logger.warning("[alarm] 故障登记失败: %s", type(exc).__name__)
+                return
