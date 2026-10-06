@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+*.pyo
+alarm_state.json
+data/
+.DS_Store
